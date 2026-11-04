@@ -1,0 +1,300 @@
+!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat de amigos</title>
+<style>
+:root{--bg:#f3f1ec;--panel:#fff;--ink:#1c2b27;--mute:#6b7a75;--line:#e2e0da;--accent:#0f8f6f;--mine:#d6f3e6;--theirs:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#10191a;--panel:#18262a;--ink:#e6efeb;--mute:#8da39c;--line:#27393d;--accent:#2fbf95;--mine:#1d5445;--theirs:#22343a}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hidden{display:none!important}
+.av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-weight:600;background-size:cover;background-position:center}
+.btn{background:var(--accent);color:#fff;padding:9px 16px;border-radius:8px;font-weight:600}
+.btn.ghost{background:none;color:var(--accent);border:1px solid var(--accent)}
+input[type=text],input[type=email],input[type=password],textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+label{display:block;margin:12px 0 4px;color:var(--mute);font-size:13px}
+.err{color:#c0392b;min-height:20px;margin:8px 0 0;font-size:13px}
+#auth{height:100%;display:grid;place-items:center;padding:16px}
+.card{background:var(--panel);padding:28px;border-radius:14px;width:100%;max-width:360px;border:1px solid var(--line)}
+.card h1{margin:0 0 4px;font-size:22px}
+.card p{margin:0 0 8px;color:var(--mute)}
+.row{display:flex;gap:8px;margin-top:14px}.row .btn{flex:1}
+#app{height:100%;display:grid;grid-template-columns:340px 1fr}
+#side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.me{display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--line)}
+.me .grow{flex:1;min-width:0}.me b,.fr b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.me small,.fr small{color:var(--mute)}
+.ico{padding:8px;border-radius:8px;color:var(--mute)}.ico:hover{background:var(--bg)}
+#list{flex:1;overflow:auto}
+.fr{display:flex;align-items:center;gap:10px;padding:10px 12px;width:100%;text-align:left;border-bottom:1px solid var(--line)}
+.fr:hover,.fr.on{background:var(--bg)}
+.fr .grow{flex:1;min-width:0}
+.badge{background:var(--accent);color:#fff;border-radius:99px;padding:1px 8px;font-size:12px}
+.empty{padding:24px;color:var(--mute);text-align:center}
+#chat{display:flex;flex-direction:column;min-height:0;min-width:0}
+#chead{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+#back{display:none}
+#msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:6px}
+.m{max-width:min(75%,520px);padding:7px 10px;border-radius:10px;background:var(--theirs);align-self:flex-start;overflow-wrap:anywhere;border:1px solid var(--line)}
+.m.mine{background:var(--mine);align-self:flex-end;border-color:transparent}
+.m time{display:block;text-align:right;font-size:11px;color:var(--mute);margin-top:2px}
+.m img{max-width:100%;max-height:260px;border-radius:6px;display:block;margin-bottom:4px}
+.m audio{max-width:100%;height:38px}
+.m a{color:var(--accent);font-weight:600}
+#bar{display:flex;align-items:flex-end;gap:6px;padding:10px;background:var(--panel);border-top:1px solid var(--line)}
+#txt{resize:none;max-height:120px;flex:1}
+.rec{color:#c0392b!important;background:#fdecea}
+.none{flex:1;display:grid;place-items:center;color:var(--mute);text-align:center;padding:24px}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:22px;width:min(380px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin:0 0 6px;font-size:18px}
+.pav{display:flex;align-items:center;gap:12px}
+input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+@media(max-width:700px){
+ #app{grid-template-columns:1fr}
+ #chat{display:none}
+ body.open #side{display:none}body.open #chat{display:flex}
+ #back{display:block}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<section id="auth" class="hidden">
+ <div class="card">
+  <h1>Chat de amigos</h1>
+  <p>Mensajes, archivos y audios con tus amigos.</p>
+  <label for="em">Correo</label><input id="em" type="email" autocomplete="email">
+  <label for="pw">Contraseña (mínimo 6 caracteres)</label><input id="pw" type="password" autocomplete="current-password">
+  <div class="err" id="aerr"></div>
+  <div class="row"><button class="btn" id="login">Entrar</button><button class="btn ghost" id="signup">Crear cuenta</button></div>
+ </div>
+</section>
+
+<section id="app" class="hidden">
+ <aside id="side">
+  <div class="me">
+   <div class="av" id="meav"></div>
+   <div class="grow"><b id="mename"></b><small id="mecode"></small></div>
+   <button class="ico" id="addbtn" title="Agregar amigo" aria-label="Agregar amigo">＋</button>
+   <button class="ico" id="profbtn" title="Mi perfil" aria-label="Mi perfil">⚙</button>
+  </div>
+  <div id="list"></div>
+ </aside>
+ <main id="chat">
+  <div class="none" id="none">Elige un amigo para empezar a chatear.</div>
+  <div id="cwrap" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
+   <div id="chead"><button class="ico" id="back" aria-label="Volver">←</button><div class="av" id="hav"></div><div><b id="hname"></b><small id="hbio" style="color:var(--mute)"></small></div></div>
+   <div id="msgs"></div>
+   <div id="bar">
+    <button class="ico" id="attach" title="Adjuntar archivo" aria-label="Adjuntar archivo">📎</button>
+    <input type="file" id="file" class="hidden">
+    <textarea id="txt" rows="1" placeholder="Escribe un mensaje"></textarea>
+    <button class="ico" id="mic" title="Grabar audio" aria-label="Grabar audio">🎤</button>
+    <button class="btn" id="send">Enviar</button>
+   </div>
+  </div>
+ </main>
+</section>
+
+<dialog id="dAdd">
+ <h2>Agregar amigo</h2>
+ <p style="color:var(--mute);margin:0">Escribe el código de tu amigo.</p>
+ <label for="fcode">Código de amigo</label><input id="fcode" type="text" autocapitalize="characters">
+ <div class="err" id="aderr"></div>
+ <div class="row"><button class="btn ghost" data-close>Cancelar</button><button class="btn" id="doadd">Agregar</button></div>
+</dialog>
+
+<dialog id="dProf">
+ <h2>Mi perfil</h2>
+ <div class="pav"><div class="av" id="pav" style="width:56px;height:56px"></div><button class="btn ghost" id="pick">Cambiar foto</button><input type="file" id="pfile" accept="image/*" class="hidden"></div>
+ <label for="pname">Nombre</label><input id="pname" type="text" maxlength="40">
+ <label for="pbio">Estado</label><input id="pbio" type="text" maxlength="80">
+ <label for="pcolor">Color del perfil</label><input id="pcolor" type="color">
+ <label for="pcode">Mi código de amigo (3 a 20 letras, números o _)</label><input id="pcode" type="text" maxlength="20" autocapitalize="characters">
+ <div class="err" id="perr"></div>
+ <div class="row"><button class="btn ghost" data-close>Cerrar</button><button class="btn" id="psave">Guardar cambios</button></div>
+ <div class="row"><button class="btn ghost" id="logout">Cerrar sesión</button></div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+// 1) Pega aquí los datos de tu proyecto Supabase (Settings > API)
+const SUPABASE_URL = 'https://bpcxbbjdpjgcimbtfpos.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_E_IxjCgD7aGA50kRvBZXLw_kFBW-TnT';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const MAX_MB = 20;
+let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null;
+
+function el(tag, cls, text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function avatar(node, p){
+  node.style.background = p.color || '#0f8f6f'; node.textContent = '';
+  if (p.avatar) { node.style.backgroundImage = `url("${p.avatar}")`; }
+  else { node.style.backgroundImage = 'none'; node.textContent = (p.name || '?').trim().charAt(0).toUpperCase(); }
+}
+function hm(d){return new Date(d).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+
+/* ---------- Sesión ---------- */
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  session ? start() : showAuth();
+  sb.auth.onAuthStateChange((ev)=>{ if(ev==='SIGNED_OUT') location.reload(); });
+}
+function showAuth(){ $('auth').classList.remove('hidden'); $('app').classList.add('hidden'); }
+async function doAuth(signup){
+  $('aerr').textContent = '';
+  const email = $('em').value.trim(), password = $('pw').value;
+  const { data, error } = signup ? await sb.auth.signUp({email,password}) : await sb.auth.signInWithPassword({email,password});
+  if (error) return $('aerr').textContent = error.message;
+  if (!data.session) return $('aerr').textContent = 'Revisa tu correo para confirmar la cuenta.';
+  start();
+}
+$('login').onclick = () => doAuth(false);
+$('signup').onclick = () => doAuth(true);
+$('logout').onclick = () => sb.auth.signOut();
+
+async function start(){
+  const { data:{ user } } = await sb.auth.getUser();
+  const { data: p, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if (error) { showAuth(); return $('aerr').textContent = 'No se pudo cargar tu perfil. ¿Ejecutaste setup.sql?'; }
+  me = p;
+  $('auth').classList.add('hidden'); $('app').classList.remove('hidden');
+  paintMe(); await loadFriends();
+  chan = sb.channel('msgs').on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, onNew).subscribe();
+}
+function paintMe(){ avatar($('meav'), me); $('mename').textContent = me.name; $('mecode').textContent = 'Código: ' + me.code; }
+
+/* ---------- Amigos ---------- */
+async function loadFriends(){
+  const { data: rel } = await sb.from('friends').select('friend_id').eq('user_id', me.id);
+  const ids = (rel || []).map(r => r.friend_id);
+  friends = ids.length ? (await sb.from('profiles').select('*').in('id', ids)).data || [] : [];
+  renderList();
+}
+function renderList(){
+  const box = $('list'); box.textContent = '';
+  if (!friends.length) return box.append(el('div','empty','Aún no tienes amigos. Toca ＋ y escribe el código de un amigo.'));
+  friends.forEach(f => {
+    const b = el('button','fr' + (cur && cur.id===f.id ? ' on':'')); const a = el('div','av'); avatar(a,f);
+    const g = el('div','grow'); g.append(el('b',null,f.name), el('small',null,f.bio || ' '));
+    b.append(a,g); if (unread[f.id]) b.append(el('span','badge',unread[f.id]));
+    b.onclick = () => openChat(f); box.append(b);
+  });
+}
+$('addbtn').onclick = () => { $('fcode').value=''; $('aderr').textContent=''; $('dAdd').showModal(); };
+$('doadd').onclick = async () => {
+  const { error } = await sb.rpc('add_friend', { c: $('fcode').value });
+  if (error) return $('aderr').textContent = error.message;
+  $('dAdd').close(); loadFriends();
+};
+document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+
+/* ---------- Chat ---------- */
+async function openChat(f){
+  cur = f; unread[f.id] = 0; document.body.classList.add('open');
+  $('none').classList.add('hidden'); $('cwrap').classList.remove('hidden');
+  avatar($('hav'), f); $('hname').textContent = f.name; $('hbio').textContent = f.bio || '';
+  const { data } = await sb.from('messages').select('*')
+    .or(`and(sender.eq.${me.id},receiver.eq.${f.id}),and(sender.eq.${f.id},receiver.eq.${me.id})`)
+    .order('created_at').limit(300);
+  msgs = data || []; seen = new Set(msgs.map(m => m.id));
+  $('msgs').textContent = ''; msgs.forEach(draw); scrollEnd(); renderList();
+}
+$('back').onclick = () => { document.body.classList.remove('open'); cur = null; renderList(); };
+function scrollEnd(){ const m=$('msgs'); m.scrollTop = m.scrollHeight; }
+function draw(m){
+  const d = el('div','m' + (m.sender===me.id ? ' mine':''));
+  if (m.kind==='text') d.append(document.createTextNode(m.body));
+  else if (m.kind==='audio'){ const a=el('audio'); a.controls=true; a.src=m.url; d.append(a); }
+  else {
+    if (/\.(png|jpe?g|gif|webp)$/i.test(m.fname||'')) { const i=el('img'); i.src=m.url; i.alt=m.fname; d.append(i); }
+    const a=el('a',null,'📄 ' + (m.fname||'archivo')); a.href=m.url; a.target='_blank'; a.rel='noopener'; a.download=m.fname||''; d.append(a);
+  }
+  d.append(el('time',null,hm(m.created_at))); $('msgs').append(d);
+}
+function add(m){ if (seen.has(m.id)) return; seen.add(m.id); msgs.push(m); draw(m); scrollEnd(); }
+async function onNew({ new: m }){
+  if (m.sender!==me.id && m.receiver!==me.id) return;
+  const other = m.sender===me.id ? m.receiver : m.sender;
+  if (!friends.some(f => f.id===other)) await loadFriends();
+  if (cur && cur.id===other) add(m); else { unread[other]=(unread[other]||0)+1; renderList(); }
+}
+async function post(row){
+  const { data, error } = await sb.from('messages').insert({ sender: me.id, receiver: cur.id, ...row }).select().single();
+  if (error) return alert('No se pudo enviar: ' + error.message);
+  add(data);
+}
+async function upload(blob, name){
+  if (blob.size > MAX_MB*1024*1024) { alert(`El archivo supera ${MAX_MB} MB.`); return null; }
+  const path = `${me.id}/${crypto.randomUUID()}-${name.replace(/[^\w.\-]+/g,'_')}`;
+  const { error } = await sb.storage.from('chat').upload(path, blob, { contentType: blob.type || undefined });
+  if (error) { alert('No se pudo subir: ' + error.message); return null; }
+  return sb.storage.from('chat').getPublicUrl(path).data.publicUrl;
+}
+async function sendText(){
+  const t = $('txt').value.trim(); if (!t || !cur) return;
+  $('txt').value = ''; await post({ kind:'text', body:t });
+}
+$('send').onclick = sendText;
+$('txt').onkeydown = e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } };
+$('attach').onclick = () => $('file').click();
+$('file').onchange = async e => {
+  const f = e.target.files[0]; e.target.value=''; if (!f || !cur) return;
+  const url = await upload(f, f.name); if (url) post({ kind:'file', url, fname:f.name });
+};
+
+/* ---------- Audio ---------- */
+$('mic').onclick = async () => {
+  if (rec) { rec.stop(); return; }
+  if (!cur) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    const mime = ['audio/webm','audio/mp4','audio/ogg'].find(t => MediaRecorder.isTypeSupported(t)) || '';
+    const chunks = []; rec = new MediaRecorder(stream, mime ? { mimeType:mime } : undefined);
+    rec.ondataavailable = e => chunks.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop()); $('mic').classList.remove('rec'); rec = null;
+      const type = chunks[0]?.type || mime || 'audio/webm';
+      const blob = new Blob(chunks, { type }); const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
+      const url = await upload(blob, `audio.${ext}`); if (url) post({ kind:'audio', url, fname:`audio.${ext}` });
+    };
+    rec.start(); $('mic').classList.add('rec');
+  } catch { alert('Necesito permiso para usar el micrófono.'); }
+};
+
+/* ---------- Perfil ---------- */
+let newAvatar = null;
+$('profbtn').onclick = () => {
+  newAvatar = null; $('perr').textContent = '';
+  $('pname').value = me.name; $('pbio').value = me.bio; $('pcolor').value = me.color; $('pcode').value = me.code;
+  avatar($('pav'), me); $('dProf').showModal();
+};
+$('pick').onclick = () => $('pfile').click();
+$('pfile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value=''; if (!f) return;
+  const url = await upload(f, f.name); if (url) { newAvatar = url; avatar($('pav'), { ...me, avatar:url, color:$('pcolor').value }); }
+};
+$('pcolor').oninput = () => avatar($('pav'), { ...me, avatar:newAvatar ?? me.avatar, color:$('pcolor').value, name:$('pname').value });
+$('psave').onclick = async () => {
+  const code = $('pcode').value.trim().toUpperCase();
+  if (!/^[A-Z0-9_]{3,20}$/.test(code)) return $('perr').textContent = 'El código debe tener de 3 a 20 letras, números o _.';
+  const upd = { name: $('pname').value.trim() || 'Usuario', bio: $('pbio').value.trim(), color: $('pcolor').value, code };
+  if (newAvatar) upd.avatar = newAvatar;
+  const { data, error } = await sb.from('profiles').update(upd).eq('id', me.id).select().single();
+  if (error) return $('perr').textContent = error.code==='23505' ? 'Ese código ya está en uso. Prueba con otro.' : error.message;
+  me = data; paintMe(); $('dProf').close();
+};
+
+boot();
+</script>
+</body>
+</html>
