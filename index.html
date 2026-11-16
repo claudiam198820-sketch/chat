@@ -14,7 +14,7 @@ button,input,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .hidden{display:none!important}
-.av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-weight:600;background-size:cover;background-position:center}
+.av{width:52px;height:52px;font-size:20px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-weight:600;background-size:cover;background-position:center}
 .btn{background:var(--accent);color:#fff;padding:9px 16px;border-radius:8px;font-weight:600}
 .btn.ghost{background:none;color:var(--accent);border:1px solid var(--accent)}
 input[type=text],input[type=email],input[type=password],textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
@@ -65,6 +65,8 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
 .st{align-self:flex-end;font-size:11px;color:var(--mute);margin:-2px 4px 0}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2fbf95;margin-left:6px}
 #chead b,#chead small{display:block}
+#ccv{width:100%;max-width:300px;aspect-ratio:1;display:block;margin:12px auto 0;touch-action:none;cursor:grab;border-radius:8px;background:#000}
+#czoom{width:100%}
 @media(max-width:700px){
  #app{grid-template-columns:1fr}
  #chat{display:none}
@@ -123,7 +125,7 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
 
 <dialog id="dProf">
  <h2>Mi perfil</h2>
- <div class="pav"><div class="av" id="pav" style="width:56px;height:56px"></div><button class="btn ghost" id="pick">Cambiar foto</button><input type="file" id="pfile" accept="image/*" class="hidden"></div>
+ <div class="pav"><div class="av" id="pav" style="width:120px;height:120px;font-size:44px"></div><button class="btn ghost" id="pick">Cambiar foto</button><input type="file" id="pfile" accept="image/*" class="hidden"></div>
  <label for="pname">Nombre</label><input id="pname" type="text" maxlength="40">
  <label for="pbio">Estado</label><input id="pbio" type="text" maxlength="80">
  <label for="pcolor">Color del perfil</label><input id="pcolor" type="color">
@@ -131,6 +133,15 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
  <div class="err" id="perr"></div>
  <div class="row"><button class="btn ghost" data-close>Cerrar</button><button class="btn" id="psave">Guardar cambios</button></div>
  <div class="row"><button class="btn ghost" id="logout">Cerrar sesión</button></div>
+</dialog>
+
+<dialog id="dCrop">
+ <h2>Ajusta tu foto</h2>
+ <p style="color:var(--mute);margin:0">Arrastra para mover y usa el zoom para encuadrar.</p>
+ <canvas id="ccv" width="300" height="300"></canvas>
+ <label for="czoom">Zoom</label><input id="czoom" type="range" min="1" max="4" step="0.01" value="1">
+ <div class="err" id="cerr"></div>
+ <div class="row"><button class="btn ghost" id="ccancel">Cancelar</button><button class="btn" id="csave">Usar foto</button></div>
 </dialog>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -401,36 +412,56 @@ let newAvatar = null;
 // La foto se reduce a 256 px (JPEG) antes de subirla al bucket público "avatars"
 async function decode(file){
   if (window.createImageBitmap) { try { return await createImageBitmap(file); } catch {} }
-  return new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('no se pudo leer la imagen, prueba con JPG o PNG')); i.src = URL.createObjectURL(file); });
+  return new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('prueba con JPG o PNG')); i.src = URL.createObjectURL(file); });
 }
-async function uploadAvatar(file){
-  if (!file.type.startsWith('image/')) { $('perr').textContent = 'Elige una imagen.'; return null; }
+async function uploadAvatar(blob){
   try {
-    const bmp = await decode(file), w = bmp.naturalWidth || bmp.width, h = bmp.naturalHeight || bmp.height, S = 256, k = Math.max(S/w, S/h);
-    const c = document.createElement('canvas'); c.width = c.height = S;
-    c.getContext('2d').drawImage(bmp, (S-w*k)/2, (S-h*k)/2, w*k, h*k);
-    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .85));
     const { error } = await sb.storage.from('avatars').upload(`${me.id}/avatar.jpg`, blob, { upsert:true, contentType:'image/jpeg' });
     if (error) throw error;
     return sb.storage.from('avatars').getPublicUrl(`${me.id}/avatar.jpg`).data.publicUrl + '?v=' + Date.now();
   } catch (e) {
-    $('perr').textContent = 'No se pudo subir la foto: ' + e.message + (/bucket not found/i.test(e.message) ? ' (falta correr migracion.sql en Supabase)' : '');
+    $('cerr').textContent = 'No se pudo subir la foto: ' + e.message + (/bucket not found/i.test(e.message) ? ' (falta correr migracion.sql en Supabase)' : '');
     return null;
   }
 }
-$('profbtn').onclick = () => {
-  newAvatar = null; $('perr').textContent = '';
-  $('pname').value = me.name; $('pbio').value = me.bio; $('pcolor').value = me.color; $('pcode').value = me.code;
-  avatar($('pav'), me); $('dProf').showModal();
+/* Editor de foto: arrastra para mover, zoom con la barra o la rueda del mouse */
+const S = 300, cv = $('ccv'), cg = cv.getContext('2d');
+let ci = null, cz = 1, cx = 0, cy = 0, cw = 0, ch = 0, drag = null;
+const cscale = () => Math.max(S/cw, S/ch) * cz;
+function cclamp(){
+  const mx = Math.max(0, (cw*cscale()-S)/2), my = Math.max(0, (ch*cscale()-S)/2);
+  cx = Math.min(mx, Math.max(-mx, cx)); cy = Math.min(my, Math.max(-my, cy));
+}
+function cdraw(){
+  const k = cscale(); cg.clearRect(0, 0, S, S);
+  cg.drawImage(ci, S/2+cx-cw*k/2, S/2+cy-ch*k/2, cw*k, ch*k);
+  cg.fillStyle = 'rgba(0,0,0,.55)'; cg.beginPath(); cg.rect(0, 0, S, S); cg.arc(S/2, S/2, S/2, 0, Math.PI*2, true); cg.fill('evenodd');
+}
+cv.onpointerdown = e => { drag = { x:e.clientX, y:e.clientY, cx, cy }; cv.setPointerCapture(e.pointerId); };
+cv.onpointermove = e => {
+  if (!drag) return; const r = S / cv.getBoundingClientRect().width;
+  cx = drag.cx + (e.clientX-drag.x)*r; cy = drag.cy + (e.clientY-drag.y)*r; cclamp(); cdraw();
 };
-$('pick').onclick = () => $('pfile').click();
+cv.onpointerup = cv.onpointercancel = () => drag = null;
+$('czoom').oninput = () => { cz = +$('czoom').value; cclamp(); cdraw(); };
+cv.onwheel = e => { e.preventDefault(); $('czoom').value = Math.min(4, Math.max(1, cz - e.deltaY/500)); $('czoom').oninput(); };
 $('pfile').onchange = async e => {
   const f = e.target.files[0]; e.target.value=''; if (!f) return;
   $('perr').textContent = '';
-  const url = await uploadAvatar(f); if (!url) return;
-  const { data, error } = await sb.from('profiles').update({ avatar:url }).eq('id', me.id).select().single(); // se guarda al momento
-  if (error) return $('perr').textContent = 'No se pudo guardar la foto: ' + error.message;
-  me = data; newAvatar = null; paintMe(); avatar($('pav'), me);
+  if (!f.type.startsWith('image/')) return $('perr').textContent = 'Elige una imagen.';
+  try { ci = await decode(f); } catch (err) { return $('perr').textContent = 'No se pudo abrir la foto: ' + err.message; }
+  cw = ci.naturalWidth || ci.width; ch = ci.naturalHeight || ci.height; cz = 1; cx = cy = 0;
+  $('czoom').value = 1; $('cerr').textContent = ''; cdraw(); $('dCrop').showModal();
+};
+$('ccancel').onclick = () => $('dCrop').close();
+$('csave').onclick = async () => {
+  const O = 512, f = O/S, k = cscale(), out = document.createElement('canvas'); out.width = out.height = O;
+  out.getContext('2d').drawImage(ci, f*(S/2+cx-cw*k/2), f*(S/2+cy-ch*k/2), f*cw*k, f*ch*k);
+  const blob = await new Promise(r => out.toBlob(r, 'image/jpeg', .88));
+  const url = await uploadAvatar(blob); if (!url) return;
+  const { data, error } = await sb.from('profiles').update({ avatar:url }).eq('id', me.id).select().single();
+  if (error) return $('cerr').textContent = 'No se pudo guardar la foto: ' + error.message;
+  me = data; newAvatar = null; paintMe(); avatar($('pav'), me); $('dCrop').close();
 };
 $('pcolor').oninput = () => avatar($('pav'), { ...me, avatar:newAvatar ?? me.avatar, color:$('pcolor').value, name:$('pname').value });
 $('psave').onclick = async () => {
