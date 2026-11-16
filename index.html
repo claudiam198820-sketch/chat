@@ -56,6 +56,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 dialog h2{margin:0 0 6px;font-size:18px}
 .pav{display:flex;align-items:center;gap:12px}
 input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.m{position:relative}
+.m .x{position:absolute;top:2px;right:4px;font-size:11px;color:var(--mute);opacity:0;padding:2px 5px}
+.m:hover .x,.m .x:focus-visible{opacity:1}
+@media (hover:none){.m .x{opacity:.6}}
+.more{align-self:center;flex:none}
 @media(max-width:700px){
  #app{grid-template-columns:1fr}
  #chat{display:none}
@@ -92,7 +97,7 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
   <div class="none" id="none">Elige un amigo para empezar a chatear.</div>
   <div id="cwrap" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
    <div id="chead"><button class="ico" id="back" aria-label="Volver">←</button><div class="av" id="hav"></div><div><b id="hname"></b><small id="hbio" style="color:var(--mute)"></small></div></div>
-   <div id="msgs"></div>
+   <div id="msgs" role="log" aria-live="polite"></div>
    <div id="bar">
     <button class="ico" id="attach" title="Adjuntar archivo" aria-label="Adjuntar archivo">📎</button>
     <input type="file" id="file" class="hidden">
@@ -130,18 +135,32 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
 const SUPABASE_URL = 'https://bpcxbbjdpjgcimbtfpos.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E_IxjCgD7aGA50kRvBZXLw_kFBW-TnT';
 
+if (SUPABASE_URL.startsWith('PEGA_AQUI') || SUPABASE_KEY.startsWith('PEGA_AQUI')) {
+  document.body.innerHTML = '<div class="none" style="height:100%">Falta configurar Supabase: abre index.html y pega tu Project URL y tu anon key en las dos primeras líneas del script.</div>';
+  throw new Error('Supabase sin configurar');
+}
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
-const MAX_MB = 20;
+const MAX_MB = 20, PAGE = 50;
 let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null;
+const nodes = new Map(), urlCache = new Map();
+const more = Object.assign(document.createElement('button'), { className: 'btn ghost more hidden', textContent: 'Cargar mensajes anteriores' });
 
 function el(tag, cls, text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function avatar(node, p){
   node.style.background = p.color || '#0f8f6f'; node.textContent = '';
-  if (p.avatar) { node.style.backgroundImage = `url("${p.avatar}")`; }
+  // Solo se aceptan imágenes alojadas en tu propio Supabase
+  if (p.avatar && p.avatar.startsWith(SUPABASE_URL + '/')) node.style.backgroundImage = 'url(' + JSON.stringify(p.avatar) + ')';
   else { node.style.backgroundImage = 'none'; node.textContent = (p.name || '?').trim().charAt(0).toUpperCase(); }
 }
 function hm(d){return new Date(d).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+function stamp(m){ return hm(m.created_at) + (m.sender===me.id ? (m.read_at ? ' ✓✓' : ' ✓') : ''); }
+// URLs firmadas (caducan en 1 h) para los archivos privados del chat
+function signed(path){
+  const c = urlCache.get(path); if (c && c.exp > Date.now()) return c.p;
+  const p = sb.storage.from('chat').createSignedUrl(path, 3600).then(r => r.data?.signedUrl || null);
+  urlCache.set(path, { p, exp: Date.now() + 3300e3 }); return p;
+}
 
 /* ---------- Sesión ---------- */
 async function boot(){
@@ -163,14 +182,25 @@ $('signup').onclick = () => doAuth(true);
 $('logout').onclick = () => sb.auth.signOut();
 
 async function start(){
-  const { data:{ user } } = await sb.auth.getUser();
-  const { data: p, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
-  if (error) { showAuth(); return $('aerr').textContent = 'No se pudo cargar tu perfil. ¿Ejecutaste setup.sql?'; }
-  me = p;
+  try {
+    const { data:{ user } } = await sb.auth.getUser();
+    if (!user) return showAuth();
+    const { data: p, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
+    if (error) throw error;
+    me = p;
+  } catch (e) { showAuth(); return $('aerr').textContent = 'No se pudo cargar tu perfil: ' + (e.message || 'revisa tu conexión y que ejecutaste setup.sql'); }
   $('auth').classList.add('hidden'); $('app').classList.remove('hidden');
-  paintMe(); await loadFriends();
-  chan = sb.channel('msgs').on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, onNew).subscribe();
+  paintMe(); await loadFriends(); await loadUnread();
+  let first = true;
+  chan = sb.channel('msgs')
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages', filter:`receiver=eq.${me.id}`}, onNew)
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages', filter:`sender=eq.${me.id}`}, onUpd)
+    .on('postgres_changes', {event:'DELETE', schema:'public', table:'messages'}, onDel)
+    .subscribe(s => { if (s==='SUBSCRIBED') { if (first) first = false; else sync(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 }
+// Se ejecuta al reconectar o volver a la pestaña: recupera lo que llegó mientras no estabas
+async function sync(){ if (!me) return; await loadFriends(); await loadUnread(); if (cur) await openChat(cur); }
 function paintMe(){ avatar($('meav'), me); $('mename').textContent = me.name; $('mecode').textContent = 'Código: ' + me.code; }
 
 /* ---------- Amigos ---------- */
@@ -178,6 +208,12 @@ async function loadFriends(){
   const { data: rel } = await sb.from('friends').select('friend_id').eq('user_id', me.id);
   const ids = (rel || []).map(r => r.friend_id);
   friends = ids.length ? (await sb.from('profiles').select('*').in('id', ids)).data || [] : [];
+  renderList();
+}
+async function loadUnread(){
+  const { data } = await sb.from('messages').select('sender').eq('receiver', me.id).is('read_at', null).limit(1000);
+  unread = {}; (data || []).forEach(r => unread[r.sender] = (unread[r.sender] || 0) + 1);
+  if (cur) unread[cur.id] = 0;
   renderList();
 }
 function renderList(){
@@ -199,46 +235,86 @@ $('doadd').onclick = async () => {
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 
 /* ---------- Chat ---------- */
+const q = f => sb.from('messages').select('*')
+  .or(`and(sender.eq.${me.id},receiver.eq.${f.id}),and(sender.eq.${f.id},receiver.eq.${me.id})`);
+
 async function openChat(f){
   cur = f; unread[f.id] = 0; document.body.classList.add('open');
   $('none').classList.add('hidden'); $('cwrap').classList.remove('hidden');
   avatar($('hav'), f); $('hname').textContent = f.name; $('hbio').textContent = f.bio || '';
-  const { data } = await sb.from('messages').select('*')
-    .or(`and(sender.eq.${me.id},receiver.eq.${f.id}),and(sender.eq.${f.id},receiver.eq.${me.id})`)
-    .order('created_at').limit(300);
-  msgs = data || []; seen = new Set(msgs.map(m => m.id));
-  $('msgs').textContent = ''; msgs.forEach(draw); scrollEnd(); renderList();
+  const { data } = await q(f).order('created_at', { ascending:false }).limit(PAGE); // los más recientes
+  if (cur !== f) return; // cambiaste de chat mientras cargaba
+  const page = data || [];
+  msgs = page.slice().reverse(); seen = new Set(msgs.map(m => m.id));
+  const box = $('msgs'); box.textContent = ''; nodes.clear(); box.append(more);
+  more.classList.toggle('hidden', page.length < PAGE);
+  msgs.forEach(m => draw(m)); scrollEnd(); renderList(); markRead(f.id);
+}
+more.onclick = async () => {
+  if (!cur || !msgs.length) return;
+  const f = cur;
+  const { data } = await q(f).lt('created_at', msgs[0].created_at).order('created_at', { ascending:false }).limit(PAGE);
+  if (cur !== f) return;
+  const older = (data || []).reverse(), ref = more.nextSibling, box = $('msgs'), h = box.scrollHeight;
+  older.forEach(m => { seen.add(m.id); draw(m, ref); }); msgs = older.concat(msgs);
+  more.classList.toggle('hidden', (data || []).length < PAGE);
+  box.scrollTop += box.scrollHeight - h; // mantiene la posición de lectura
+};
+async function markRead(id){
+  await sb.from('messages').update({ read_at: new Date().toISOString() }).eq('receiver', me.id).eq('sender', id).is('read_at', null);
 }
 $('back').onclick = () => { document.body.classList.remove('open'); cur = null; renderList(); };
 function scrollEnd(){ const m=$('msgs'); m.scrollTop = m.scrollHeight; }
-function draw(m){
-  const d = el('div','m' + (m.sender===me.id ? ' mine':''));
+function draw(m, before){
+  const mine = m.sender === me.id;
+  const d = el('div','m' + (mine ? ' mine':'')); d.dataset.id = m.id;
   if (m.kind==='text') d.append(document.createTextNode(m.body));
-  else if (m.kind==='audio'){ const a=el('audio'); a.controls=true; a.src=m.url; d.append(a); }
+  else if (m.kind==='audio'){ const a=el('audio'); a.controls=true; d.append(a); signed(m.path).then(u => { if (u) a.src = u; }); }
   else {
-    if (/\.(png|jpe?g|gif|webp)$/i.test(m.fname||'')) { const i=el('img'); i.src=m.url; i.alt=m.fname; d.append(i); }
-    const a=el('a',null,'📄 ' + (m.fname||'archivo')); a.href=m.url; a.target='_blank'; a.rel='noopener'; a.download=m.fname||''; d.append(a);
+    const a = el('a',null,'📄 ' + (m.fname||'archivo')); a.target='_blank'; a.rel='noopener'; d.append(a);
+    signed(m.path).then(u => { if (u) { a.href = u; a.download = m.fname || ''; } });
+    if (/\.(png|jpe?g|gif|webp)$/i.test(m.fname||'')) { const i=el('img'); i.alt=m.fname; d.prepend(i); signed(m.path).then(u => { if (u) i.src = u; }); }
   }
-  d.append(el('time',null,hm(m.created_at))); $('msgs').append(d);
+  d.append(el('time',null,stamp(m)));
+  if (mine) { const x = el('button','x','✕'); x.title = 'Eliminar'; x.setAttribute('aria-label','Eliminar mensaje'); x.onclick = () => delMsg(m.id); d.append(x); }
+  nodes.set(m.id, d);
+  before ? $('msgs').insertBefore(d, before) : $('msgs').append(d);
 }
 function add(m){ if (seen.has(m.id)) return; seen.add(m.id); msgs.push(m); draw(m); scrollEnd(); }
-async function onNew({ new: m }){
-  if (m.sender!==me.id && m.receiver!==me.id) return;
-  const other = m.sender===me.id ? m.receiver : m.sender;
-  if (!friends.some(f => f.id===other)) await loadFriends();
-  if (cur && cur.id===other) add(m); else { unread[other]=(unread[other]||0)+1; renderList(); }
+async function delMsg(id){
+  if (!confirm('¿Eliminar este mensaje?')) return;
+  const m = msgs.find(x => x.id===id);
+  const { error } = await sb.from('messages').delete().eq('id', id);
+  if (error) return alert('No se pudo eliminar: ' + error.message);
+  if (m?.path) sb.storage.from('chat').remove([m.path]);
+  onDel({ old:{ id } });
 }
-async function post(row){
-  const { data, error } = await sb.from('messages').insert({ sender: me.id, receiver: cur.id, ...row }).select().single();
+function onDel({ old:o }){
+  const d = nodes.get(o.id); if (!d) return;
+  d.remove(); nodes.delete(o.id); seen.delete(o.id); msgs = msgs.filter(x => x.id!==o.id);
+}
+function onUpd({ new:m }){ // el otro leyó tu mensaje
+  const d = nodes.get(m.id); if (!d) return;
+  const i = msgs.findIndex(x => x.id===m.id); if (i >= 0) msgs[i] = m;
+  d.querySelector('time').textContent = stamp(m);
+}
+async function onNew({ new:m }){
+  if (!friends.some(f => f.id===m.sender)) await loadFriends();
+  if (cur && cur.id===m.sender) { add(m); if (!document.hidden) markRead(m.sender); }
+  else { unread[m.sender] = (unread[m.sender]||0) + 1; renderList(); }
+}
+async function post(row, to = cur){
+  const { data, error } = await sb.from('messages').insert({ sender: me.id, receiver: to.id, ...row }).select().single();
   if (error) return alert('No se pudo enviar: ' + error.message);
-  add(data);
+  if (cur && cur.id===to.id) add(data);
 }
+// Los archivos van a un bucket privado; se guarda la ruta, no una URL pública
 async function upload(blob, name){
   if (blob.size > MAX_MB*1024*1024) { alert(`El archivo supera ${MAX_MB} MB.`); return null; }
   const path = `${me.id}/${crypto.randomUUID()}-${name.replace(/[^\w.\-]+/g,'_')}`;
   const { error } = await sb.storage.from('chat').upload(path, blob, { contentType: blob.type || undefined });
   if (error) { alert('No se pudo subir: ' + error.message); return null; }
-  return sb.storage.from('chat').getPublicUrl(path).data.publicUrl;
+  return path;
 }
 async function sendText(){
   const t = $('txt').value.trim(); if (!t || !cur) return;
@@ -248,31 +324,49 @@ $('send').onclick = sendText;
 $('txt').onkeydown = e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendText(); } };
 $('attach').onclick = () => $('file').click();
 $('file').onchange = async e => {
-  const f = e.target.files[0]; e.target.value=''; if (!f || !cur) return;
-  const url = await upload(f, f.name); if (url) post({ kind:'file', url, fname:f.name });
+  const f = e.target.files[0], to = cur; e.target.value=''; if (!f || !to) return;
+  const path = await upload(f, f.name); if (path) post({ kind:'file', path, fname:f.name }, to);
 };
 
 /* ---------- Audio ---------- */
 $('mic').onclick = async () => {
+  const b = $('mic');
   if (rec) { rec.stop(); return; }
   if (!cur) return;
+  const to = cur; // el audio va a quien tenías abierto al empezar
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
     const mime = ['audio/webm','audio/mp4','audio/ogg'].find(t => MediaRecorder.isTypeSupported(t)) || '';
-    const chunks = []; rec = new MediaRecorder(stream, mime ? { mimeType:mime } : undefined);
+    const chunks = []; let iv; rec = new MediaRecorder(stream, mime ? { mimeType:mime } : undefined);
     rec.ondataavailable = e => chunks.push(e.data);
     rec.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop()); $('mic').classList.remove('rec'); rec = null;
+      clearInterval(iv); stream.getTracks().forEach(t => t.stop());
+      b.classList.remove('rec'); b.textContent = '🎤'; b.setAttribute('aria-label','Grabar audio'); rec = null;
       const type = chunks[0]?.type || mime || 'audio/webm';
       const blob = new Blob(chunks, { type }); const ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
-      const url = await upload(blob, `audio.${ext}`); if (url) post({ kind:'audio', url, fname:`audio.${ext}` });
+      const path = await upload(blob, `audio.${ext}`); if (path) post({ kind:'audio', path, fname:`audio.${ext}` }, to);
     };
-    rec.start(); $('mic').classList.add('rec');
+    rec.start(); const t0 = Date.now();
+    b.classList.add('rec'); b.textContent = '⏹ 0:00'; b.setAttribute('aria-label','Detener grabación');
+    iv = setInterval(() => { const s = Math.floor((Date.now()-t0)/1000); b.textContent = `⏹ ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }, 500);
   } catch { alert('Necesito permiso para usar el micrófono.'); }
 };
 
 /* ---------- Perfil ---------- */
 let newAvatar = null;
+// La foto se reduce a 256 px (JPEG) antes de subirla al bucket público "avatars"
+async function uploadAvatar(file){
+  if (!file.type.startsWith('image/')) { alert('Elige una imagen.'); return null; }
+  try {
+    const bmp = await createImageBitmap(file), S = 256, k = Math.max(S/bmp.width, S/bmp.height);
+    const c = document.createElement('canvas'); c.width = c.height = S;
+    c.getContext('2d').drawImage(bmp, (S-bmp.width*k)/2, (S-bmp.height*k)/2, bmp.width*k, bmp.height*k);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', .85));
+    const { error } = await sb.storage.from('avatars').upload(`${me.id}/avatar.jpg`, blob, { upsert:true, contentType:'image/jpeg' });
+    if (error) throw error;
+    return sb.storage.from('avatars').getPublicUrl(`${me.id}/avatar.jpg`).data.publicUrl + '?v=' + Date.now();
+  } catch (e) { alert('No se pudo subir la foto: ' + e.message); return null; }
+}
 $('profbtn').onclick = () => {
   newAvatar = null; $('perr').textContent = '';
   $('pname').value = me.name; $('pbio').value = me.bio; $('pcolor').value = me.color; $('pcode').value = me.code;
@@ -281,7 +375,7 @@ $('profbtn').onclick = () => {
 $('pick').onclick = () => $('pfile').click();
 $('pfile').onchange = async e => {
   const f = e.target.files[0]; e.target.value=''; if (!f) return;
-  const url = await upload(f, f.name); if (url) { newAvatar = url; avatar($('pav'), { ...me, avatar:url, color:$('pcolor').value }); }
+  const url = await uploadAvatar(f); if (url) { newAvatar = url; avatar($('pav'), { ...me, avatar:url, color:$('pcolor').value }); }
 };
 $('pcolor').oninput = () => avatar($('pav'), { ...me, avatar:newAvatar ?? me.avatar, color:$('pcolor').value, name:$('pname').value });
 $('psave').onclick = async () => {
