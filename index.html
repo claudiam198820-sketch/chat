@@ -152,7 +152,7 @@ const more = Object.assign(document.createElement('button'), { className: 'btn g
 
 function el(tag, cls, text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function avatar(node, p){
-  node.style.background = p.color || '#0f8f6f'; node.textContent = '';
+  node.style.backgroundColor = p.color || '#0f8f6f'; node.style.backgroundSize = 'cover'; node.style.backgroundPosition = 'center'; node.textContent = '';
   // Solo se aceptan imágenes alojadas en tu propio Supabase
   if (p.avatar && p.avatar.startsWith(SUPABASE_URL + '/')) node.style.backgroundImage = 'url(' + JSON.stringify(p.avatar) + ')';
   else { node.style.backgroundImage = 'none'; node.textContent = (p.name || '?').trim().charAt(0).toUpperCase(); }
