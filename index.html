@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat de amigos</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f8f6f">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{--bg:#f3f1ec;--panel:#fff;--ink:#1c2b27;--mute:#6b7a75;--line:#e2e0da;--accent:#0f8f6f;--mine:#d6f3e6;--theirs:#fff}
 @media (prefers-color-scheme:dark){:root{--bg:#10191a;--panel:#18262a;--ink:#e6efeb;--mute:#8da39c;--line:#27393d;--accent:#2fbf95;--mine:#1d5445;--theirs:#22343a}}
@@ -59,7 +62,21 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
 .m{position:relative}
 .m .x{position:absolute;top:2px;right:4px;font-size:11px;color:var(--mute);opacity:0;padding:2px 5px}
 .m:hover .x,.m .x:focus-visible{opacity:1}
-@media (hover:none){.m .x{opacity:.6}}
+.m.sel .x{opacity:1}
+.top{display:flex;gap:8px;align-items:baseline}.top b{flex:1;min-width:0}
+.when{font-size:11px;color:var(--mute);flex:none}
+.fr small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.typ{color:var(--accent)!important}
+.m .x.rp{right:24px}.m:not(.mine) .x.rp{right:4px}
+.q{border-left:3px solid var(--accent);background:rgba(0,0,0,.06);padding:2px 6px;margin-bottom:4px;border-radius:4px;font-size:12px;color:var(--mute);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+#rbar{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);color:var(--mute);font-size:13px}
+#rtxt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-left:3px solid var(--accent);padding-left:8px}
+.aud{display:flex;align-items:center}
+.spd{font-size:11px;font-weight:600;color:var(--accent);padding:2px 8px;border:1px solid var(--accent);border-radius:99px;margin-left:6px}
+#dImg{padding:0;background:transparent;border:0;max-width:96vw;max-height:96vh}
+#dImg::backdrop{background:rgba(0,0,0,.85)}
+#bigimg{display:block;max-width:96vw;max-height:92vh;border-radius:8px}
+#hav,#meav,#pav,.m img{cursor:zoom-in}
 .more{align-self:center;flex:none}
 .tk{opacity:.6}.tk.r{color:#2f8fe0;opacity:1}
 .st{align-self:flex-end;font-size:11px;color:var(--mute);margin:-2px 4px 0}
@@ -86,6 +103,7 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
   <label for="pw">Contraseña (mínimo 6 caracteres)</label><input id="pw" type="password" autocomplete="current-password">
   <div class="err" id="aerr"></div>
   <div class="row"><button class="btn" id="login">Entrar</button><button class="btn ghost" id="signup">Crear cuenta</button></div>
+  <button class="btn ghost inst hidden" style="width:100%;margin-top:10px">📲 Instalar app</button>
  </div>
 </section>
 
@@ -94,6 +112,7 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
   <div class="me">
    <div class="av" id="meav"></div>
    <div class="grow"><b id="mename"></b><small id="mecode"></small></div>
+   <button class="ico inst hidden" title="Instalar app" aria-label="Instalar app">📲</button>
    <button class="ico" id="addbtn" title="Agregar amigo" aria-label="Agregar amigo">＋</button>
    <button class="ico" id="profbtn" title="Mi perfil" aria-label="Mi perfil">⚙</button>
   </div>
@@ -104,6 +123,7 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
   <div id="cwrap" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
    <div id="chead"><button class="ico" id="back" aria-label="Volver">←</button><div class="av" id="hav"></div><div><b id="hname"></b><small id="hbio" style="color:var(--mute)"></small></div></div>
    <div id="msgs" role="log" aria-live="polite"></div>
+   <div id="rbar" class="hidden"><span id="rtxt"></span><button class="ico" id="rx" aria-label="Cancelar respuesta">✕</button></div>
    <div id="bar">
     <button class="ico" id="attach" title="Adjuntar archivo" aria-label="Adjuntar archivo">📎</button>
     <input type="file" id="file" class="hidden">
@@ -135,6 +155,8 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
  <div class="row"><button class="btn ghost" id="logout">Cerrar sesión</button></div>
 </dialog>
 
+<dialog id="dImg"><img id="bigimg" alt=""></dialog>
+
 <dialog id="dCrop">
  <h2>Ajusta tu foto</h2>
  <p style="color:var(--mute);margin:0">Arrastra para mover y usa el zoom para encuadrar.</p>
@@ -157,7 +179,7 @@ if (SUPABASE_URL.startsWith('PEGA_AQUI') || SUPABASE_KEY.startsWith('PEGA_AQUI')
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
 const MAX_MB = 20, PAGE = 50;
-let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null, online = new Set();
+let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null, online = new Set(), last = {}, typing = {}, replyTo = null, pres = null, lastTyp = 0;
 const nodes = new Map(), urlCache = new Map();
 const more = Object.assign(document.createElement('button'), { className: 'btn ghost more hidden', textContent: 'Cargar mensajes anteriores' });
 
@@ -195,7 +217,7 @@ async function paintHead(refetch){
     if (data) f.last_seen = data.last_seen;
     if (cur !== f) return;
   }
-  const st = online.has(f.id) ? 'en línea' : lastSeenTxt(f.last_seen);
+  const st = typing[f.id] ? 'escribiendo…' : online.has(f.id) ? 'en línea' : lastSeenTxt(f.last_seen);
   $('hbio').textContent = st + (f.bio ? (st ? ' · ' : '') + f.bio : '');
 }
 // URLs firmadas (caducan en 1 h) para los archivos privados del chat
@@ -233,15 +255,16 @@ async function start(){
     me = p;
   } catch (e) { showAuth(); return $('aerr').textContent = 'No se pudo cargar tu perfil: ' + (e.message || 'revisa tu conexión y que ejecutaste setup.sql'); }
   $('auth').classList.add('hidden'); $('app').classList.remove('hidden');
-  paintMe(); await loadFriends(); await loadUnread(); markDelivered();
+  paintMe(); await loadFriends(); await loadUnread(); await loadLast(); markDelivered();
   let first = true;
   chan = sb.channel('msgs')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages', filter:`receiver=eq.${me.id}`}, onNew)
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages', filter:`sender=eq.${me.id}`}, onUpd)
     .on('postgres_changes', {event:'DELETE', schema:'public', table:'messages'}, onDel)
     .subscribe(s => { if (s==='SUBSCRIBED') { if (first) first = false; else sync(); } });
-  const pres = sb.channel('online', { config:{ presence:{ key: me.id } } });
+  pres = sb.channel('online', { config:{ presence:{ key: me.id } } });
   pres.on('presence', { event:'sync' }, () => { online = new Set(Object.keys(pres.presenceState())); renderList(); paintHead(true); })
+      .on('broadcast', { event:'typing' }, onTyping)
       .subscribe(s => { if (s==='SUBSCRIBED' && !document.hidden) pres.track({ at: Date.now() }); });
   const seenNow = async () => { await sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', me.id); };
   seenNow(); setInterval(() => { if (!document.hidden) seenNow(); }, 60000);
@@ -251,7 +274,7 @@ async function start(){
   });
 }
 // Se ejecuta al reconectar o volver a la pestaña: recupera lo que llegó mientras no estabas
-async function sync(){ if (!me) return; await loadFriends(); await loadUnread(); markDelivered(); if (cur) await openChat(cur); }
+async function sync(){ if (!me) return; await loadFriends(); await loadUnread(); await loadLast(); markDelivered(); if (cur) await openChat(cur); }
 function paintMe(){ avatar($('meav'), me); $('mename').textContent = me.name; $('mecode').textContent = 'Código: ' + me.code; }
 
 /* ---------- Amigos ---------- */
@@ -267,12 +290,29 @@ async function loadUnread(){
   if (cur) unread[cur.id] = 0;
   renderList();
 }
+async function loadLast(){
+  const { data } = await sb.from('messages').select('*').or(`sender.eq.${me.id},receiver.eq.${me.id}`).order('created_at', { ascending:false }).limit(300);
+  last = {}; (data || []).forEach(m => { const o = m.sender===me.id ? m.receiver : m.sender; if (!last[o]) last[o] = m; });
+  renderList();
+}
+const pv = m => (m.sender===me.id ? 'Tú: ' : '') + (m.kind==='text' ? m.body : m.kind==='audio' ? '🎤 Audio' : '📄 ' + (m.fname || 'Archivo'));
+function when(ts){
+  const d = new Date(ts), n = new Date();
+  if (d.toDateString()===n.toDateString()) return hm(ts);
+  if (d.toDateString()===new Date(n - 864e5).toDateString()) return 'ayer';
+  return d.toLocaleDateString([], { day:'numeric', month:'short' });
+}
 function renderList(){
   const box = $('list'); box.textContent = '';
+  const n = Object.values(unread).reduce((a, b) => a + b, 0); document.title = (n ? `(${n}) ` : '') + 'Chat de amigos';
   if (!friends.length) return box.append(el('div','empty','Aún no tienes amigos. Toca ＋ y escribe el código de un amigo.'));
-  friends.forEach(f => {
-    const b = el('button','fr' + (cur && cur.id===f.id ? ' on':'')); const a = el('div','av'); avatar(a,f);
-    const g = el('div','grow'); const nm = el('b',null,f.name); if (online.has(f.id)) nm.append(el('span','dot')); g.append(nm, el('small',null,f.bio || ' '));
+  const t = f => last[f.id] ? +new Date(last[f.id].created_at) : 0;
+  [...friends].sort((a, b) => t(b) - t(a) || a.name.localeCompare(b.name)).forEach(f => {
+    const b = el('button','fr' + (cur && cur.id===f.id ? ' on':'')), a = el('div','av'); avatar(a,f);
+    const g = el('div','grow'), top = el('div','top'), nm = el('b',null,f.name), l = last[f.id];
+    if (online.has(f.id)) nm.append(el('span','dot'));
+    top.append(nm); if (l) top.append(el('span','when',when(l.created_at)));
+    g.append(top, el('small', typing[f.id] ? 'typ' : null, typing[f.id] ? 'escribiendo…' : l ? pv(l) : (f.bio || ' ')));
     b.append(a,g); if (unread[f.id]) b.append(el('span','badge',unread[f.id]));
     b.onclick = () => openChat(f); box.append(b);
   });
@@ -290,7 +330,7 @@ const q = f => sb.from('messages').select('*')
   .or(`and(sender.eq.${me.id},receiver.eq.${f.id}),and(sender.eq.${f.id},receiver.eq.${me.id})`);
 
 async function openChat(f){
-  cur = f; unread[f.id] = 0; document.body.classList.add('open');
+  if (cur !== f) clearReply(); cur = f; unread[f.id] = 0; document.body.classList.add('open');
   $('none').classList.add('hidden'); $('cwrap').classList.remove('hidden');
   avatar($('hav'), f); $('hname').textContent = f.name; paintHead(true);
   const { data } = await q(f).order('created_at', { ascending:false }).limit(PAGE); // los más recientes
@@ -322,19 +362,24 @@ function scrollEnd(){ const m=$('msgs'); m.scrollTop = m.scrollHeight; }
 function draw(m, before){
   const mine = m.sender === me.id;
   const d = el('div','m' + (mine ? ' mine':'')); d.dataset.id = m.id;
+  if (m.reply_to) { const o = msgs.find(x => x.id===m.reply_to), qd = el('div','q', o ? pv(o) : '↩ Mensaje anterior'); qd.onclick = () => nodes.get(m.reply_to)?.scrollIntoView({ block:'center' }); d.append(qd); }
   if (m.kind==='text') d.append(document.createTextNode(m.body));
-  else if (m.kind==='audio'){ const a=el('audio'); a.controls=true; d.append(a); signed(m.path).then(u => { if (u) a.src = u; }); }
+  else if (m.kind==='audio'){ const a=el('audio'), w=el('div','aud'), sp=el('button','spd','1x'); a.controls=true;
+    sp.onclick = () => { const r = a.playbackRate===1 ? 1.5 : a.playbackRate===1.5 ? 2 : 1; a.playbackRate = r; sp.textContent = r + 'x'; };
+    w.append(a, sp); d.append(w); signed(m.path).then(u => { if (u) a.src = u; }); }
   else {
     const a = el('a',null,'📄 ' + (m.fname||'archivo')); a.target='_blank'; a.rel='noopener'; d.append(a);
     signed(m.path).then(u => { if (u) { a.href = u; a.download = m.fname || ''; } });
-    if (/\.(png|jpe?g|gif|webp)$/i.test(m.fname||'')) { const i=el('img'); i.alt=m.fname; d.prepend(i); signed(m.path).then(u => { if (u) i.src = u; }); }
+    if (/\.(png|jpe?g|gif|webp)$/i.test(m.fname||'')) { const i=el('img'); i.alt=m.fname; i.onclick = () => showPhoto(i.src); d.prepend(i); signed(m.path).then(u => { if (u) i.src = u; }); }
   }
   const t = el('time'); paintTime(t, m); d.append(t);
+  const rp = el('button','x rp','↩'); rp.title = 'Responder'; rp.setAttribute('aria-label','Responder'); rp.onclick = () => setReply(m); d.append(rp);
+  d.onclick = e => { if (!e.target.closest('button,a,img,audio,.q')) d.classList.toggle('sel'); };
   if (mine) { const x = el('button','x','✕'); x.title = 'Eliminar'; x.setAttribute('aria-label','Eliminar mensaje'); x.onclick = () => delMsg(m.id); d.append(x); }
   nodes.set(m.id, d);
   before ? $('msgs').insertBefore(d, before) : $('msgs').append(d);
 }
-function add(m){ if (seen.has(m.id)) return; seen.add(m.id); msgs.push(m); draw(m); refreshSt(); scrollEnd(); }
+function add(m){ if (seen.has(m.id)) return; seen.add(m.id); msgs.push(m); last[cur.id] = m; draw(m); refreshSt(); scrollEnd(); renderList(); }
 async function delMsg(id){
   if (!confirm('¿Eliminar este mensaje?')) return;
   const m = msgs.find(x => x.id===id);
@@ -345,7 +390,7 @@ async function delMsg(id){
 }
 function onDel({ old:o }){
   const d = nodes.get(o.id); if (!d) return;
-  d.remove(); nodes.delete(o.id); seen.delete(o.id); msgs = msgs.filter(x => x.id!==o.id); refreshSt();
+  d.remove(); nodes.delete(o.id); seen.delete(o.id); msgs = msgs.filter(x => x.id!==o.id); refreshSt(); loadLast();
 }
 function onUpd({ new:m }){ // el otro leyó tu mensaje
   const d = nodes.get(m.id); if (!d) return;
@@ -353,15 +398,17 @@ function onUpd({ new:m }){ // el otro leyó tu mensaje
   paintTime(d.querySelector('time'), m); refreshSt();
 }
 async function onNew({ new:m }){
+  delete typing[m.sender];
   markDelivered();
   if (!friends.some(f => f.id===m.sender)) await loadFriends();
+  if (document.hidden || !cur || cur.id!==m.sender) { const f = friends.find(x => x.id===m.sender); notify(f ? f.name : 'Nuevo mensaje', pv(m), m.sender); }
   if (cur && cur.id===m.sender) { add(m); if (!document.hidden) markRead(m.sender); }
-  else { unread[m.sender] = (unread[m.sender]||0) + 1; renderList(); }
+  else { unread[m.sender] = (unread[m.sender]||0) + 1; last[m.sender] = m; renderList(); }
 }
 async function post(row, to = cur){
-  const { data, error } = await sb.from('messages').insert({ sender: me.id, receiver: to.id, ...row }).select().single();
+  const { data, error } = await sb.from('messages').insert({ sender: me.id, receiver: to.id, ...(replyTo ? { reply_to: replyTo.id } : {}), ...row }).select().single();
   if (error) return alert('No se pudo enviar: ' + error.message);
-  if (cur && cur.id===to.id) add(data);
+  clearReply(); if (cur && cur.id===to.id) add(data);
 }
 // Los archivos van a un bucket privado; se guarda la ruta, no una URL pública
 async function upload(blob, name){
@@ -473,6 +520,47 @@ $('psave').onclick = async () => {
   if (error) return $('perr').textContent = error.code==='23505' ? 'Ese código ya está en uso. Prueba con otro.' : error.message;
   me = data; paintMe(); $('dProf').close();
 };
+
+function setReply(m){ replyTo = m; $('rtxt').textContent = pv(m); $('rbar').classList.remove('hidden'); $('txt').focus(); }
+function clearReply(){ replyTo = null; $('rbar').classList.add('hidden'); }
+$('rx').onclick = clearReply;
+
+function onTyping({ payload:p }){
+  if (p.to!==me.id) return;
+  typing[p.from] = Date.now(); paintHead(); renderList();
+  setTimeout(() => { if (Date.now() - typing[p.from] >= 3000) { delete typing[p.from]; paintHead(); renderList(); } }, 3100);
+}
+$('txt').addEventListener('input', () => {
+  if (!cur || !pres || Date.now() - lastTyp < 2000) return; lastTyp = Date.now();
+  pres.send({ type:'broadcast', event:'typing', payload:{ from:me.id, to:cur.id } });
+});
+
+function showPhoto(u){ if (!u) return; $('bigimg').src = u; $('dImg').showModal(); }
+$('dImg').onclick = () => $('dImg').close();
+$('hav').onclick = () => cur && showPhoto(cur.avatar);
+$('meav').onclick = () => showPhoto(me.avatar);
+$('pav').onclick = () => showPhoto(me.avatar);
+
+// Notificaciones (funcionan con la app abierta o en segundo plano) y app instalable
+async function notify(title, body, tag){
+  if (!('Notification' in window) || Notification.permission!=='granted') return;
+  const reg = await navigator.serviceWorker?.getRegistration();
+  reg ? reg.showNotification(title, { body, tag, icon:'icon-192.png' }) : new Notification(title, { body, tag });
+}
+document.addEventListener('click', () => { if ('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }, { once:true });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// Botón "Instalar app": un toque en Android/PC; en iPhone muestra los pasos
+let dip = null;
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+const showInst = on => document.querySelectorAll('.inst').forEach(b => b.classList.toggle('hidden', !on || standalone));
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); dip = e; showInst(true); });
+window.addEventListener('appinstalled', () => { dip = null; showInst(false); });
+if (/iphone|ipad|ipod/i.test(navigator.userAgent)) showInst(true);
+document.querySelectorAll('.inst').forEach(b => b.onclick = async () => {
+  if (dip) { dip.prompt(); await dip.userChoice; dip = null; showInst(false); }
+  else alert('En iPhone: toca el botón Compartir de Safari y elige "Agregar a pantalla de inicio".');
+});
 
 boot();
 </script>
