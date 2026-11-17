@@ -77,6 +77,15 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
 #dImg::backdrop{background:rgba(0,0,0,.85)}
 #bigimg{display:block;max-width:96vw;max-height:92vh;border-radius:8px}
 #hav,#meav,#pav,.m img{cursor:zoom-in}
+#bar{position:relative}
+.m .x.react{right:44px}.m:not(.mine) .x.react{right:24px}.m .x.ed{right:64px}
+.rc{font-size:13px;margin-top:2px}
+.flash{animation:fl 1.5s}@keyframes fl{from{box-shadow:0 0 0 3px var(--accent)}to{box-shadow:0 0 0 3px transparent}}
+.pick{position:fixed;z-index:50;display:flex;gap:2px;padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:99px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.pick button{font-size:20px;padding:2px 5px}
+.egrid{position:absolute;bottom:100%;left:8px;z-index:50;display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:8px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.2);max-width:calc(100vw - 16px)}
+.egrid button{font-size:22px;padding:2px}
+.req .btn{padding:6px 10px;font-size:13px}
 .more{align-self:center;flex:none}
 .tk{opacity:.6}.tk.r{color:#2f8fe0;opacity:1}
 .st{align-self:flex-end;font-size:11px;color:var(--mute);margin:-2px 4px 0}
@@ -121,12 +130,13 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
  <main id="chat">
   <div class="none" id="none">Elige un amigo para empezar a chatear.</div>
   <div id="cwrap" class="hidden" style="display:flex;flex-direction:column;flex:1;min-height:0">
-   <div id="chead"><button class="ico" id="back" aria-label="Volver">←</button><div class="av" id="hav"></div><div><b id="hname"></b><small id="hbio" style="color:var(--mute)"></small></div></div>
+   <div id="chead"><button class="ico" id="back" aria-label="Volver">←</button><div class="av" id="hav"></div><div><b id="hname"></b><small id="hbio" style="color:var(--mute)"></small></div><button class="ico" id="menubtn" aria-label="Más opciones" style="margin-left:auto">⋮</button></div>
    <div id="msgs" role="log" aria-live="polite"></div>
    <div id="rbar" class="hidden"><span id="rtxt"></span><button class="ico" id="rx" aria-label="Cancelar respuesta">✕</button></div>
    <div id="bar">
     <button class="ico" id="attach" title="Adjuntar archivo" aria-label="Adjuntar archivo">📎</button>
     <input type="file" id="file" class="hidden">
+    <button class="ico" id="emo" title="Emojis" aria-label="Emojis">😊</button><div id="epanel" class="egrid hidden"></div>
     <textarea id="txt" rows="1" placeholder="Escribe un mensaje"></textarea>
     <button class="ico" id="mic" title="Grabar audio" aria-label="Grabar audio">🎤</button>
     <button class="btn" id="send">Enviar</button>
@@ -150,9 +160,27 @@ input[type=color]{width:100%;height:38px;padding:2px;border:1px solid var(--line
  <label for="pbio">Estado</label><input id="pbio" type="text" maxlength="80">
  <label for="pcolor">Color del perfil</label><input id="pcolor" type="color">
  <label for="pcode">Mi código de amigo (3 a 20 letras, números o _)</label><input id="pcode" type="text" maxlength="20" autocapitalize="characters">
+ <label id="blabel" class="hidden">Bloqueados</label><div id="blist"></div>
  <div class="err" id="perr"></div>
  <div class="row"><button class="btn ghost" data-close>Cerrar</button><button class="btn" id="psave">Guardar cambios</button></div>
  <div class="row"><button class="btn ghost" id="logout">Cerrar sesión</button></div>
+</dialog>
+
+<dialog id="dMenu">
+ <h2 id="mtitle"></h2>
+ <div class="row" style="flex-direction:column">
+  <button class="btn ghost" id="msearch">🔍 Buscar en la conversación</button>
+  <button class="btn ghost" id="mremove">Quitar amigo</button>
+  <button class="btn ghost" id="mblock">Bloquear</button>
+  <button class="btn ghost" data-close>Cerrar</button>
+ </div>
+</dialog>
+
+<dialog id="dSearch">
+ <h2>Buscar en la conversación</h2>
+ <input id="sq" type="text" placeholder="Escribe y pulsa Enter">
+ <div id="sres" style="max-height:50vh;overflow:auto;margin-top:8px"></div>
+ <div class="row"><button class="btn ghost" data-close>Cerrar</button></div>
 </dialog>
 
 <dialog id="dImg"><img id="bigimg" alt=""></dialog>
@@ -179,8 +207,8 @@ if (SUPABASE_URL.startsWith('PEGA_AQUI') || SUPABASE_KEY.startsWith('PEGA_AQUI')
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
 const MAX_MB = 20, PAGE = 50;
-let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null, online = new Set(), last = {}, typing = {}, replyTo = null, pres = null, lastTyp = 0;
-const nodes = new Map(), urlCache = new Map();
+let me, friends = [], cur = null, msgs = [], unread = {}, seen = new Set(), rec = null, chan = null, online = new Set(), last = {}, typing = {}, replyTo = null, pres = null, lastTyp = 0, reqs = [];
+const nodes = new Map(), urlCache = new Map(), reacts = new Map();
 const more = Object.assign(document.createElement('button'), { className: 'btn ghost more hidden', textContent: 'Cargar mensajes anteriores' });
 
 function el(tag, cls, text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
@@ -193,7 +221,7 @@ function avatar(node, p){
 function hm(d){return new Date(d).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
 // ✓ enviado · ✓✓ entregado · ✓✓ azul visto
 function paintTime(t, m){
-  t.textContent = hm(m.created_at); t.title = '';
+  t.textContent = (m.edited_at ? 'editado · ' : '') + hm(m.created_at); t.title = '';
   if (m.sender!==me.id) return;
   t.append(el('span','tk' + (m.read_at ? ' r' : ''), (m.delivered_at || m.read_at) ? ' ✓✓' : ' ✓'));
   t.title = `Enviado ${hm(m.created_at)}` + (m.delivered_at ? ` · Entregado ${hm(m.delivered_at)}` : '') + (m.read_at ? ` · Visto ${hm(m.read_at)}` : '');
@@ -255,12 +283,16 @@ async function start(){
     me = p;
   } catch (e) { showAuth(); return $('aerr').textContent = 'No se pudo cargar tu perfil: ' + (e.message || 'revisa tu conexión y que ejecutaste setup.sql'); }
   $('auth').classList.add('hidden'); $('app').classList.remove('hidden');
-  paintMe(); await loadFriends(); await loadUnread(); await loadLast(); markDelivered();
+  paintMe(); await loadFriends(); await loadUnread(); await loadLast(); loadReqs(); markDelivered();
   let first = true;
   chan = sb.channel('msgs')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages', filter:`receiver=eq.${me.id}`}, onNew)
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages', filter:`sender=eq.${me.id}`}, onUpd)
     .on('postgres_changes', {event:'DELETE', schema:'public', table:'messages'}, onDel)
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'messages', filter:`receiver=eq.${me.id}`}, onUpd)
+    .on('postgres_changes', {event:'INSERT', schema:'public', table:'friend_requests', filter:`to_id=eq.${me.id}`}, loadReqs)
+    .on('postgres_changes', {event:'*', schema:'public', table:'friends'}, ({ eventType, old }) => { if (eventType==='DELETE' && old.user_id!==me.id) return; loadFriends(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'reactions'}, onReact)
     .subscribe(s => { if (s==='SUBSCRIBED') { if (first) first = false; else sync(); } });
   pres = sb.channel('online', { config:{ presence:{ key: me.id } } });
   pres.on('presence', { event:'sync' }, () => { online = new Set(Object.keys(pres.presenceState())); renderList(); paintHead(true); })
@@ -274,15 +306,16 @@ async function start(){
   });
 }
 // Se ejecuta al reconectar o volver a la pestaña: recupera lo que llegó mientras no estabas
-async function sync(){ if (!me) return; await loadFriends(); await loadUnread(); await loadLast(); markDelivered(); if (cur) await openChat(cur); }
+async function sync(){ if (!me) return; await loadFriends(); await loadUnread(); await loadLast(); loadReqs(); markDelivered(); if (cur) await openChat(cur); }
 function paintMe(){ avatar($('meav'), me); $('mename').textContent = me.name; $('mecode').textContent = 'Código: ' + me.code; }
 
 /* ---------- Amigos ---------- */
 async function loadFriends(){
   const { data: rel } = await sb.from('friends').select('friend_id').eq('user_id', me.id);
+  if (!rel) return;
   const ids = (rel || []).map(r => r.friend_id);
   friends = ids.length ? (await sb.from('profiles').select('*').in('id', ids)).data || [] : [];
-  renderList();
+  if (cur && !friends.some(f => f.id===cur.id)) closeChat(); else renderList();
 }
 async function loadUnread(){
   const { data } = await sb.from('messages').select('sender').eq('receiver', me.id).is('read_at', null).limit(1000);
@@ -305,7 +338,13 @@ function when(ts){
 function renderList(){
   const box = $('list'); box.textContent = '';
   const n = Object.values(unread).reduce((a, b) => a + b, 0); document.title = (n ? `(${n}) ` : '') + 'Chat de amigos';
-  if (!friends.length) return box.append(el('div','empty','Aún no tienes amigos. Toca ＋ y escribe el código de un amigo.'));
+  reqs.forEach(r => {
+    const row = el('div','fr req'), a = el('div','av'), g = el('div','grow'), ok = el('button','btn','Aceptar'), no = el('button','ico','✕');
+    avatar(a, r); g.append(el('b',null,r.name), el('small',null,'quiere ser tu amigo'));
+    ok.onclick = () => answer(r.id, true); no.onclick = () => answer(r.id, false); no.setAttribute('aria-label','Rechazar');
+    row.append(a, g, ok, no); box.append(row);
+  });
+  if (!friends.length && !reqs.length) return box.append(el('div','empty','Aún no tienes amigos. Toca ＋ y escribe el código de un amigo.'));
   const t = f => last[f.id] ? +new Date(last[f.id].created_at) : 0;
   [...friends].sort((a, b) => t(b) - t(a) || a.name.localeCompare(b.name)).forEach(f => {
     const b = el('button','fr' + (cur && cur.id===f.id ? ' on':'')), a = el('div','av'); avatar(a,f);
@@ -319,9 +358,10 @@ function renderList(){
 }
 $('addbtn').onclick = () => { $('fcode').value=''; $('aderr').textContent=''; $('dAdd').showModal(); };
 $('doadd').onclick = async () => {
-  const { error } = await sb.rpc('add_friend', { c: $('fcode').value });
+  const { data, error } = await sb.rpc('add_friend', { c: $('fcode').value });
   if (error) return $('aderr').textContent = error.message;
-  $('dAdd').close(); loadFriends();
+  $('dAdd').close(); loadFriends(); loadReqs();
+  if (data==='enviada') alert('Solicitud enviada. Cuando la acepten aparecerá en tu lista.');
 };
 document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
 
@@ -339,7 +379,7 @@ async function openChat(f){
   msgs = page.slice().reverse(); seen = new Set(msgs.map(m => m.id));
   const box = $('msgs'); box.textContent = ''; nodes.clear(); box.append(more);
   more.classList.toggle('hidden', page.length < PAGE);
-  msgs.forEach(m => draw(m)); refreshSt(); scrollEnd(); renderList(); markRead(f.id);
+  msgs.forEach(m => draw(m)); refreshSt(); scrollEnd(); renderList(); markRead(f.id); loadReacts(msgs);
 }
 more.onclick = async () => {
   if (!cur || !msgs.length) return;
@@ -347,7 +387,7 @@ more.onclick = async () => {
   const { data } = await q(f).lt('created_at', msgs[0].created_at).order('created_at', { ascending:false }).limit(PAGE);
   if (cur !== f) return;
   const older = (data || []).reverse(), ref = more.nextSibling, box = $('msgs'), h = box.scrollHeight;
-  older.forEach(m => { seen.add(m.id); draw(m, ref); }); msgs = older.concat(msgs);
+  older.forEach(m => { seen.add(m.id); draw(m, ref); }); msgs = older.concat(msgs); loadReacts(older);
   more.classList.toggle('hidden', (data || []).length < PAGE);
   box.scrollTop += box.scrollHeight - h; // mantiene la posición de lectura
 };
@@ -363,7 +403,7 @@ function draw(m, before){
   const mine = m.sender === me.id;
   const d = el('div','m' + (mine ? ' mine':'')); d.dataset.id = m.id;
   if (m.reply_to) { const o = msgs.find(x => x.id===m.reply_to), qd = el('div','q', o ? pv(o) : '↩ Mensaje anterior'); qd.onclick = () => nodes.get(m.reply_to)?.scrollIntoView({ block:'center' }); d.append(qd); }
-  if (m.kind==='text') d.append(document.createTextNode(m.body));
+  if (m.kind==='text') d.append(el('span','tx',m.body));
   else if (m.kind==='audio'){ const a=el('audio'), w=el('div','aud'), sp=el('button','spd','1x'); a.controls=true;
     sp.onclick = () => { const r = a.playbackRate===1 ? 1.5 : a.playbackRate===1.5 ? 2 : 1; a.playbackRate = r; sp.textContent = r + 'x'; };
     w.append(a, sp); d.append(w); signed(m.path).then(u => { if (u) a.src = u; }); }
@@ -374,9 +414,11 @@ function draw(m, before){
   }
   const t = el('time'); paintTime(t, m); d.append(t);
   const rp = el('button','x rp','↩'); rp.title = 'Responder'; rp.setAttribute('aria-label','Responder'); rp.onclick = () => setReply(m); d.append(rp);
+  const rb = el('button','x react','☺'); rb.title = 'Reaccionar'; rb.setAttribute('aria-label','Reaccionar'); rb.onclick = () => openPick(m, rb); d.append(rb);
+  if (mine && m.kind==='text') { const eb = el('button','x ed','✎'); eb.title = 'Editar'; eb.setAttribute('aria-label','Editar mensaje'); eb.onclick = () => editMsg(m.id); d.append(eb); }
   d.onclick = e => { if (!e.target.closest('button,a,img,audio,.q')) d.classList.toggle('sel'); };
   if (mine) { const x = el('button','x','✕'); x.title = 'Eliminar'; x.setAttribute('aria-label','Eliminar mensaje'); x.onclick = () => delMsg(m.id); d.append(x); }
-  nodes.set(m.id, d);
+  nodes.set(m.id, d); paintReacts(m.id);
   before ? $('msgs').insertBefore(d, before) : $('msgs').append(d);
 }
 function add(m){ if (seen.has(m.id)) return; seen.add(m.id); msgs.push(m); last[cur.id] = m; draw(m); refreshSt(); scrollEnd(); renderList(); }
@@ -394,7 +436,8 @@ function onDel({ old:o }){
 }
 function onUpd({ new:m }){ // el otro leyó tu mensaje
   const d = nodes.get(m.id); if (!d) return;
-  const i = msgs.findIndex(x => x.id===m.id); if (i >= 0) msgs[i] = m;
+  const i = msgs.findIndex(x => x.id===m.id); if (i >= 0) msgs[i] = m = { ...msgs[i], ...m };
+  const tx = d.querySelector('.tx'); if (tx && tx.textContent !== m.body) tx.textContent = m.body;
   paintTime(d.querySelector('time'), m); refreshSt();
 }
 async function onNew({ new:m }){
@@ -510,6 +553,12 @@ $('csave').onclick = async () => {
   if (error) return $('cerr').textContent = 'No se pudo guardar la foto: ' + error.message;
   me = data; newAvatar = null; paintMe(); avatar($('pav'), me); $('dCrop').close();
 };
+$('profbtn').onclick = () => {
+  newAvatar = null; $('perr').textContent = '';
+  $('pname').value = me.name; $('pbio').value = me.bio; $('pcolor').value = me.color; $('pcode').value = me.code;
+  avatar($('pav'), me); loadBlocks(); $('dProf').showModal();
+};
+$('pick').onclick = () => $('pfile').click();
 $('pcolor').oninput = () => avatar($('pav'), { ...me, avatar:newAvatar ?? me.avatar, color:$('pcolor').value, name:$('pname').value });
 $('psave').onclick = async () => {
   const code = $('pcode').value.trim().toUpperCase();
@@ -561,6 +610,106 @@ document.querySelectorAll('.inst').forEach(b => b.onclick = async () => {
   if (dip) { dip.prompt(); await dip.userChoice; dip = null; showInst(false); }
   else alert('En iPhone: toca el botón Compartir de Safari y elige "Agregar a pantalla de inicio".');
 });
+
+/* ---------- Solicitudes, menú, bloqueos ---------- */
+async function loadReqs(){ const { data } = await sb.rpc('my_requests'); reqs = data || []; renderList(); }
+async function answer(id, accept){ await sb.rpc('respond_request', { from_user:id, accept }); loadReqs(); loadFriends(); }
+function closeChat(){ cur = null; $('cwrap').classList.add('hidden'); $('none').classList.remove('hidden'); document.body.classList.remove('open'); renderList(); }
+$('menubtn').onclick = () => { if (!cur) return; $('mtitle').textContent = cur.name; $('dMenu').showModal(); };
+async function leave(fn, text){
+  if (!cur || !confirm(text)) return; const id = cur.id; $('dMenu').close();
+  const { error } = await sb.rpc(fn, { fid:id }); if (error) return alert(error.message);
+  closeChat(); loadFriends();
+}
+$('mremove').onclick = () => leave('remove_friend', `¿Quitar a ${cur.name} de tus amigos?`);
+$('mblock').onclick = () => leave('block_user', `¿Bloquear a ${cur.name}? No podrá escribirte ni agregarte.`);
+async function loadBlocks(){
+  const box = $('blist'); box.textContent = '';
+  const { data } = await sb.rpc('my_blocks'); const list = data || [];
+  $('blabel').classList.toggle('hidden', !list.length);
+  list.forEach(u => {
+    const r = el('div','row'), n = el('span',null,u.name), b = el('button','btn ghost','Desbloquear'); r.style.alignItems = 'center'; n.style.flex = '1';
+    b.onclick = async () => { await sb.rpc('unblock_user', { fid:u.id }); loadBlocks(); }; r.append(n, b); box.append(r);
+  });
+}
+
+/* ---------- Buscar en la conversación ---------- */
+$('msearch').onclick = () => { $('dMenu').close(); $('sq').value = ''; $('sres').textContent = ''; $('dSearch').showModal(); $('sq').focus(); };
+$('sq').onkeydown = async e => {
+  if (e.key!=='Enter' || !cur) return; e.preventDefault();
+  const t = $('sq').value.trim(); if (!t) return;
+  const f = cur, { data } = await q(f).eq('kind','text').ilike('body', `%${t}%`).order('created_at', { ascending:false }).limit(30);
+  const box = $('sres'); box.textContent = '';
+  if (!(data || []).length) return box.append(el('div','empty','Sin resultados.'));
+  data.forEach(m => {
+    const b = el('button','fr'), g = el('div','grow');
+    g.append(el('b',null,m.body), el('small',null,(m.sender===me.id ? 'Tú' : f.name) + ' · ' + new Date(m.created_at).toLocaleString([], { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })));
+    b.append(g); b.onclick = () => { $('dSearch').close(); jumpTo(m); }; box.append(b);
+  });
+};
+async function jumpTo(m){
+  let d = nodes.get(m.id);
+  if (!d) {
+    const f = cur, { data } = await q(f).gte('created_at', m.created_at).order('created_at').limit(200);
+    if (cur !== f) return;
+    msgs = data || []; seen = new Set(msgs.map(x => x.id));
+    const box = $('msgs'); box.textContent = ''; nodes.clear(); box.append(more); more.classList.remove('hidden');
+    msgs.forEach(x => draw(x)); refreshSt(); loadReacts(msgs); d = nodes.get(m.id);
+  }
+  d?.scrollIntoView({ block:'center' }); d?.classList.add('flash'); setTimeout(() => d?.classList.remove('flash'), 1500);
+}
+
+/* ---------- Editar, reaccionar y emojis ---------- */
+async function editMsg(id){
+  const m = msgs.find(x => x.id===id); if (!m) return;
+  const t = prompt('Editar mensaje', m.body); if (t===null) return;
+  const body = t.trim(); if (!body || body===m.body) return;
+  const { data, error } = await sb.from('messages').update({ body, edited_at: new Date().toISOString() }).eq('id', id).select().single();
+  if (error) return alert('No se pudo editar: ' + error.message);
+  onUpd({ new:data }); loadLast();
+}
+let pickId = null;
+const pick = el('div','pick hidden');
+'👍 ❤️ 😂 😮 😢 🙏'.split(' ').forEach(e => { const b = el('button',null,e); b.onclick = () => react(pickId, e); pick.append(b); });
+document.body.append(pick);
+function openPick(m, btn){
+  const r = btn.getBoundingClientRect(); pickId = m.id;
+  pick.style.top = Math.max(8, r.top - 46) + 'px'; pick.style.left = Math.max(8, Math.min(r.left - 100, innerWidth - 270)) + 'px';
+  pick.classList.remove('hidden');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.pick,.react')) pick.classList.add('hidden');
+  if (!e.target.closest('#emo,#epanel')) $('epanel').classList.add('hidden');
+});
+async function react(id, emo){
+  pick.classList.add('hidden');
+  if (reacts.get(id)?.get(me.id)===emo) { await sb.from('reactions').delete().eq('message_id', id).eq('user_id', me.id); return setReact(id, me.id, null); }
+  const { error } = await sb.from('reactions').upsert({ message_id:id, user_id:me.id, emoji:emo });
+  if (error) return alert('No se pudo reaccionar: ' + error.message);
+  setReact(id, me.id, emo);
+}
+function setReact(id, uid, emo){
+  let r = reacts.get(id); if (!r) reacts.set(id, r = new Map());
+  emo ? r.set(uid, emo) : r.delete(uid); paintReacts(id);
+}
+function paintReacts(id){
+  const d = nodes.get(id); if (!d) return; d.querySelector('.rc')?.remove();
+  const r = reacts.get(id); if (!r || !r.size) return;
+  const c = {}; r.forEach(e => c[e] = (c[e] || 0) + 1);
+  d.insertBefore(el('div','rc', Object.entries(c).map(([e, n]) => e + (n > 1 ? n : '')).join(' ')), d.querySelector('time'));
+}
+async function loadReacts(list){
+  const ids = list.map(m => m.id);
+  for (let i = 0; i < ids.length; i += 80) {
+    const { data } = await sb.from('reactions').select('*').in('message_id', ids.slice(i, i + 80));
+    (data || []).forEach(r => setReact(r.message_id, r.user_id, r.emoji));
+  }
+}
+function onReact({ eventType, new:n, old:o }){ eventType==='DELETE' ? setReact(o.message_id, o.user_id, null) : setReact(n.message_id, n.user_id, n.emoji); }
+'😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😭 😡 🥳 😴 🤗 🙄 😬 🤩 😇 🥺 👍 👎 👏 🙌 🙏 💪 🔥 ✨ ❤️ 💔 💯 🎉 🎶 🍕 🍻 ⚽ 👀 🤝 👋 😉 😋 🤪 😤 😱 🥰 😌 🤭 😏'.split(' ').forEach(e => {
+  const b = el('button',null,e); b.onclick = () => { const t = $('txt'); t.setRangeText(e, t.selectionStart, t.selectionEnd, 'end'); t.focus(); }; $('epanel').append(b);
+});
+$('emo').onclick = () => $('epanel').classList.toggle('hidden');
 
 boot();
 </script>
